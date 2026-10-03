@@ -79,13 +79,17 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   });
 
-  // Connect Socket.IO
-  const socket = io();
+  // Connect via CineChannel (Dual transport: Socket.IO + PeerJS)
+  const channel = new CineChannel();
+  window.channel = channel;
 
   // Initialize Modules
-  const syncPlayer = new SyncPlayer(socket);
-  const webrtcManager = new WebRTCManager(socket);
-  const chatManager = new ChatManager(socket);
+  const syncPlayer = new SyncPlayer(channel);
+  window.syncPlayer = syncPlayer;
+  const webrtcManager = new WebRTCManager(channel);
+  window.webrtcManager = webrtcManager;
+  const chatManager = new ChatManager(channel);
+  window.chatManager = chatManager;
 
   // Enter Theater flow
   function enterTheater() {
@@ -109,8 +113,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     modalWelcome.classList.add('hidden');
 
-    // Emit Join Room to Server
-    socket.emit('join-room', {
+    // Initialize Channel (Socket.io or PeerJS)
+    channel.init({
       roomId,
       userName,
       avatar: selectedAvatarUrl
@@ -128,8 +132,8 @@ document.addEventListener('DOMContentLoaded', () => {
     if (e.key === 'Enter') enterTheater();
   });
 
-  // Socket room-joined response
-  socket.on('room-joined', ({ user, users, movieState, chatHistory }) => {
+  // Room joined response
+  channel.on('room-joined', ({ user, users, movieState, chatHistory }) => {
     window.currentUser = user;
     displayRoomId.textContent = user.roomId || inputRoomId.value;
 

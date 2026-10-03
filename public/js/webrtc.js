@@ -119,6 +119,10 @@ class WebRTCManager {
       });
     }
 
+    if (window.channel && typeof window.channel.callPartnerWithStream === 'function') {
+      window.channel.callPartnerWithStream(this.localStream);
+    }
+
     return this.localStream;
   }
 
@@ -169,7 +173,15 @@ class WebRTCManager {
     return this.peerConnection;
   }
 
-  initSocketSignaling() {
+    // P2P Direct Stream from PeerJS
+    this.socket.on('p2p-remote-stream', (remoteStream) => {
+      console.log('[WebRTC] Received direct P2P stream');
+      this.remoteStream = remoteStream;
+      this.remoteVideo.srcObject = remoteStream;
+      this.remotePlaceholder.classList.add('hidden');
+      this.setupAudioMeter(remoteStream, this.remoteSpeakingBorder);
+    });
+
     // Another user joined the room
     this.socket.on('user-joined', async ({ user }) => {
       this.partnerId = user.id;
