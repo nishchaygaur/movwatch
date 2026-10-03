@@ -1,4 +1,6 @@
 // CineSync WebRTC Real-Time Video & Audio Calling Engine
+// Complete with Perfect Negotiation Glare Resolution, Dynamic Track Injection & Autoplay Protection
+
 class WebRTCManager {
   constructor(socket) {
     this.socket = socket;
@@ -83,17 +85,26 @@ class WebRTCManager {
     });
   }
 
+  getMyId() {
+    return (window.channel && window.channel.user) ? window.channel.user.id : '';
+  }
+
   async startCallFlow() {
     try {
       await this.initLocalMedia();
       window.toast && window.toast('📷 Camera and microphone enabled');
-      // If partner is already present, initiate connection
+
+      // If partner is already present, initiate connection if offerer
       if (this.partnerId) {
         this.createPeerConnection();
-        this.initiateOffer(this.partnerId);
+        const myId = this.getMyId();
+        if (myId < this.partnerId) {
+          console.log('[WebRTC] Manual call restart as offerer');
+          await this.initiateOffer(this.partnerId);
+        }
       }
     } catch (err) {
-      console.warn('Call start error:', err);
+      console.warn('[WebRTC] Call start error:', err);
       window.toast && window.toast('⚠️ Media permission denied or device not found');
     }
   }
@@ -107,7 +118,7 @@ class WebRTCManager {
         audio: { echoCancellation: true, noiseSuppression: true }
       });
     } catch (err) {
-      console.warn('Camera failed, trying audio-only:', err);
+      console.warn('[WebRTC] Camera failed, trying audio-only:', err);
       try {
         this.localStream = await navigator.mediaDevices.getUserMedia({
           video: false,
@@ -116,7 +127,7 @@ class WebRTCManager {
         this.isVideoOff = true;
         this.updateCamButtonUI();
       } catch (audioErr) {
-        console.log('[WebRTC] Camera/Microphone not enabled or not found - running in chat & watch mode.');
+        console.log('[WebRTC] Camera/Microphone not enabled or not found - running in watch mode.');
         this.isVideoOff = true;
         this.isAudioMuted = true;
         this.localPlaceholder.classList.remove('hidden');
@@ -132,15 +143,17 @@ class WebRTCManager {
       this.setupAudioMeter(this.localStream, this.localSpeakingBorder);
     }
 
-    // If we have an existing peerConnection, add local tracks
-    if (this.peerConnection) {
+    // Inject or replace tracks in existing peer connection
+    if (this.peerConnection && this.localStream) {
+      const senders = this.peerConnection.getSenders();
       this.localStream.getTracks().forEach(track => {
-        this.peerConnection.addTrack(track, this.localStream);
+        const sender = senders.find(s => s.track && s.track.kind === track.kind);
+        if (sender) {
+          sender.replaceTrack(track).catch(e => console.warn('[WebRTC] replaceTrack notice:', e));
+        } else {
+          this.peerConnection.addTrack(track, this.localStream);
+        }
       });
-    }
-
-    if (window.channel && typeof window.channel.callPartnerWithStream === 'function') {
-      window.channel.callPartnerWithStream(this.localStream);
     }
 
     return this.localStream;
@@ -151,24 +164,51 @@ class WebRTCManager {
       return this.peerConnection;
     }
 
+    console.log('[WebRTC] Creating RTCPeerConnection with STUN/TURN configuration');
     this.peerConnection = new RTCPeerConnection(this.rtcConfig);
 
-    // Send local tracks
+    // Send local tracks or transceivers
     if (this.localStream) {
       this.localStream.getTracks().forEach(track => {
         this.peerConnection.addTrack(track, this.localStream);
       });
+    } else {
+      // Add transceivers to ensure SDP negotiates video and audio even before camera is granted
+      try {
+        this.peerConnection.addTransceiver('video', { direction: 'sendrecv' });
+        this.peerConnection.addTransceiver('audio', { direction: 'sendrecv' });
+      } catch (e) {
+        console.warn('[WebRTC] Transceiver add notice:', e);
+      }
     }
 
     // Handle remote tracks
     this.peerConnection.ontrack = (event) => {
-      console.log('[WebRTC] Received remote stream track');
-      if (!this.remoteStream) {
-        this.remoteStream = new MediaStream();
-        this.remoteVideo.srcObject = this.remoteStream;
+      console.log('[WebRTC] Received remote stream track:', event.track.kind);
+      if (event.streams && event.streams[0]) {
+        this.remoteStream = event.streams[0];
+      } else {
+        if (!this.remoteStream) {
+          this.remoteStream = new MediaStream();
+        }
+        this.remoteStream.addTrack(event.track);
       }
-      this.remoteStream.addTrack(event.track);
+
+      this.remoteVideo.srcObject = this.remoteStream;
       this.remotePlaceholder.classList.add('hidden');
+
+      // Guarantee video playback against browser autoplay policies
+      const playPromise = this.remoteVideo.play();
+      if (playPromise !== undefined) {
+        playPromise.catch(err => {
+          console.warn('[WebRTC] Autoplay notice, retrying with muted sound:', err);
+          this.remoteVideo.muted = true;
+          this.remoteVideo.play().then(() => {
+            setTimeout(() => { this.remoteVideo.muted = false; }, 800);
+          }).catch(e => console.warn('[WebRTC] Muted play failed:', e));
+        });
+      }
+
       this.setupAudioMeter(this.remoteStream, this.remoteSpeakingBorder);
     };
 
@@ -185,7 +225,16 @@ class WebRTCManager {
 
     this.peerConnection.onconnectionstatechange = () => {
       console.log('[WebRTC] Connection state:', this.peerConnection.connectionState);
-      if (this.peerConnection.connectionState === 'disconnected' || this.peerConnection.connectionState === 'failed') {
+      if (this.peerConnection.connectionState === 'connected') {
+        console.log('[WebRTC] WebRTC Peer Connection is CONNECTED! 🎉');
+        this.remotePlaceholder.classList.add('hidden');
+      } else if (this.peerConnection.connectionState === 'failed') {
+        console.warn('[WebRTC] Connection failed, attempting ICE restart...');
+        const myId = this.getMyId();
+        if (this.partnerId && myId < this.partnerId) {
+          this.initiateOffer(this.partnerId, true);
+        }
+      } else if (this.peerConnection.connectionState === 'disconnected') {
         this.handlePeerDisconnected();
       }
     };
@@ -194,12 +243,13 @@ class WebRTCManager {
   }
 
   initSocketSignaling() {
-    // P2P Direct Stream from PeerJS
+    // P2P Direct Stream fallback
     this.socket.on('p2p-remote-stream', (remoteStream) => {
       console.log('[WebRTC] Received direct P2P stream');
       this.remoteStream = remoteStream;
       this.remoteVideo.srcObject = remoteStream;
       this.remotePlaceholder.classList.add('hidden');
+      this.remoteVideo.play().catch(e => console.warn('P2P play notice:', e));
       this.setupAudioMeter(remoteStream, this.remoteSpeakingBorder);
     });
 
@@ -215,12 +265,21 @@ class WebRTCManager {
       try {
         await this.initLocalMedia();
       } catch (e) {
-        console.warn('Local media init failed on partner join:', e);
+        console.warn('[WebRTC] Local media init failed on partner join:', e);
       }
 
-      // Existing peer initiates offer
       this.createPeerConnection();
-      await this.initiateOffer(user.id);
+
+      // Glare Prevention: Deterministic Offerer / Answerer designation
+      const myId = this.getMyId();
+      const isOfferer = myId < user.id;
+
+      if (isOfferer) {
+        console.log('[WebRTC] Designated offerer for partner:', user.id);
+        await this.initiateOffer(user.id);
+      } else {
+        console.log('[WebRTC] Designated answerer; waiting for incoming offer from:', user.id);
+      }
     });
 
     // Receive signaling message
@@ -264,12 +323,14 @@ class WebRTCManager {
     });
   }
 
-  async initiateOffer(targetId) {
+  async initiateOffer(targetId, iceRestart = false) {
     if (!this.peerConnection) this.createPeerConnection();
     try {
+      console.log('[WebRTC] Creating offer for partner:', targetId);
       const offer = await this.peerConnection.createOffer({
         offerToReceiveAudio: true,
-        offerToReceiveVideo: true
+        offerToReceiveVideo: true,
+        iceRestart
       });
       await this.peerConnection.setLocalDescription(offer);
 
@@ -284,27 +345,48 @@ class WebRTCManager {
   }
 
   async handleOffer(fromId, offer) {
+    console.log('[WebRTC] Handling offer from partner:', fromId);
+    this.partnerId = fromId;
+
     if (!this.localStream) {
       try {
         await this.initLocalMedia();
       } catch (e) {
-        console.warn('Auto media on incoming offer failed:', e);
+        console.warn('[WebRTC] Auto media on incoming offer failed:', e);
       }
     }
 
     this.createPeerConnection();
+
+    // Glare resolution: Polite peer rolls back if collision occurs
+    const myId = this.getMyId();
+    const isPolite = myId > fromId;
+    if (this.peerConnection.signalingState !== 'stable') {
+      if (isPolite) {
+        console.log('[WebRTC] Glare collision; polite peer rolling back');
+        await this.peerConnection.setLocalDescription({ type: 'rollback' });
+      } else {
+        console.log('[WebRTC] Glare collision; impolite peer ignoring colliding offer');
+        return;
+      }
+    }
 
     await this.peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
     
     // Process queued candidates
     while (this.iceCandidateQueue.length > 0) {
       const cand = this.iceCandidateQueue.shift();
-      await this.peerConnection.addIceCandidate(new RTCIceCandidate(cand));
+      try {
+        await this.peerConnection.addIceCandidate(new RTCIceCandidate(cand));
+      } catch (e) {
+        console.warn('[WebRTC] Queued candidate error:', e);
+      }
     }
 
     const answer = await this.peerConnection.createAnswer();
     await this.peerConnection.setLocalDescription(answer);
 
+    console.log('[WebRTC] Sending answer to partner:', fromId);
     this.socket.emit('webrtc-signal', {
       to: fromId,
       type: 'answer',
@@ -313,21 +395,33 @@ class WebRTCManager {
   }
 
   async handleAnswer(answer) {
+    console.log('[WebRTC] Handling answer from partner');
     if (this.peerConnection) {
-      await this.peerConnection.setRemoteDescription(new RTCSessionDescription(answer));
-      // Process queued candidates
-      while (this.iceCandidateQueue.length > 0) {
-        const cand = this.iceCandidateQueue.shift();
-        await this.peerConnection.addIceCandidate(new RTCIceCandidate(cand));
+      if (this.peerConnection.signalingState === 'have-local-offer') {
+        await this.peerConnection.setRemoteDescription(new RTCSessionDescription(answer));
+        // Process queued candidates
+        while (this.iceCandidateQueue.length > 0) {
+          const cand = this.iceCandidateQueue.shift();
+          try {
+            await this.peerConnection.addIceCandidate(new RTCIceCandidate(cand));
+          } catch (e) {
+            console.warn('[WebRTC] Queued candidate error:', e);
+          }
+        }
       }
     }
   }
 
   async handleCandidate(candidate) {
-    if (this.peerConnection && this.peerConnection.remoteDescription) {
-      await this.peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
-    } else {
-      this.iceCandidateQueue.push(candidate);
+    if (!candidate) return;
+    try {
+      if (this.peerConnection && this.peerConnection.remoteDescription && this.peerConnection.remoteDescription.type) {
+        await this.peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
+      } else {
+        this.iceCandidateQueue.push(candidate);
+      }
+    } catch (e) {
+      console.warn('[WebRTC] Candidate notice:', e);
     }
   }
 
@@ -383,7 +477,7 @@ class WebRTCManager {
 
         const screenTrack = this.screenStream.getVideoTracks()[0];
         
-        // Replace video track in peer connection
+        // Replace video track on sender
         if (this.peerConnection) {
           const sender = this.peerConnection.getSenders().find(s => s.track && s.track.kind === 'video');
           if (sender) {
@@ -391,92 +485,103 @@ class WebRTCManager {
           }
         }
 
+        // Show local screen preview in small tile
         this.localVideo.srcObject = this.screenStream;
         this.isScreenSharing = true;
         this.btnShareScreen.classList.add('active');
-
-        screenTrack.onended = () => {
-          this.stopScreenSharing();
-        };
-
         window.toast && window.toast('🖥️ Screen sharing active');
+
+        screenTrack.onended = () => this.stopScreenShare();
       } catch (err) {
-        console.warn('Screen share error:', err);
+        console.warn('Screen share canceled or failed:', err);
       }
     } else {
-      this.stopScreenSharing();
+      this.stopScreenShare();
     }
   }
 
-  stopScreenSharing() {
+  stopScreenShare() {
     if (this.screenStream) {
       this.screenStream.getTracks().forEach(t => t.stop());
       this.screenStream = null;
     }
+    this.isScreenSharing = false;
+    this.btnShareScreen.classList.remove('active');
 
     if (this.localStream) {
-      const cameraTrack = this.localStream.getVideoTracks()[0];
-      if (this.peerConnection && cameraTrack) {
+      const camTrack = this.localStream.getVideoTracks()[0];
+      if (this.peerConnection && camTrack) {
         const sender = this.peerConnection.getSenders().find(s => s.track && s.track.kind === 'video');
         if (sender) {
-          sender.replaceTrack(cameraTrack);
+          sender.replaceTrack(camTrack);
         }
       }
       this.localVideo.srcObject = this.localStream;
     }
+  }
 
-    this.isScreenSharing = false;
-    this.btnShareScreen.classList.remove('active');
+  setupAudioMeter(stream, glowElement) {
+    if (!stream || !glowElement) return;
+    try {
+      const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      const analyser = audioCtx.createAnalyser();
+      const microphone = audioCtx.createMediaStreamSource(stream);
+      const javascriptNode = audioCtx.createScriptProcessor(2048, 1, 1);
+
+      analyser.smoothingTimeConstant = 0.8;
+      analyser.fftSize = 1024;
+
+      microphone.connect(analyser);
+      analyser.connect(javascriptNode);
+      javascriptNode.connect(audioCtx.destination);
+
+      javascriptNode.onaudioprocess = () => {
+        const array = new Uint8Array(analyser.frequencyBinCount);
+        analyser.getByteFrequencyData(array);
+        let values = 0;
+        const length = array.length;
+        for (let i = 0; i < length; i++) {
+          values += array[i];
+        }
+        const average = values / length;
+
+        // If speaking volume passes threshold, activate speaking glow
+        if (average > 18) {
+          glowElement.classList.add('speaking');
+        } else {
+          glowElement.classList.remove('speaking');
+        }
+      };
+    } catch (e) {
+      console.warn('Audio meter setup notice:', e);
+    }
   }
 
   updateMicButtonUI() {
-    this.iconMicOn.classList.toggle('hidden', this.isAudioMuted);
-    this.iconMicOff.classList.toggle('hidden', !this.isAudioMuted);
-    this.btnToggleMic.classList.toggle('muted', this.isAudioMuted);
+    if (this.isAudioMuted) {
+      this.btnToggleMic.classList.remove('active');
+      this.btnToggleMic.classList.add('muted');
+      this.iconMicOn.classList.add('hidden');
+      this.iconMicOff.classList.remove('hidden');
+    } else {
+      this.btnToggleMic.classList.add('active');
+      this.btnToggleMic.classList.remove('muted');
+      this.iconMicOn.classList.remove('hidden');
+      this.iconMicOff.classList.add('hidden');
+    }
   }
 
   updateCamButtonUI() {
-    this.iconCamOn.classList.toggle('hidden', this.isVideoOff);
-    this.iconCamOff.classList.toggle('hidden', !this.isVideoOff);
-    this.btnToggleCam.classList.toggle('muted', this.isVideoOff);
-  }
-
-  // Voice Activity Detection / Audio Visualizer
-  setupAudioMeter(stream, targetBorderElement) {
-    if (!targetBorderElement) return;
-    try {
-      const audioTrack = stream.getAudioTracks()[0];
-      if (!audioTrack) return;
-
-      const AudioCtx = window.AudioContext || window.webkitAudioContext;
-      const audioContext = new AudioCtx();
-      const source = audioContext.createMediaStreamSource(stream);
-      const analyser = audioContext.createAnalyser();
-      analyser.fftSize = 256;
-      source.connect(analyser);
-
-      const bufferLength = analyser.frequencyBinCount;
-      const dataArray = new Uint8Array(bufferLength);
-
-      const checkVolume = () => {
-        analyser.getByteFrequencyData(dataArray);
-        let sum = 0;
-        for (let i = 0; i < bufferLength; i++) {
-          sum += dataArray[i];
-        }
-        const average = sum / bufferLength;
-        // Speaking threshold
-        if (average > 18) {
-          targetBorderElement.classList.add('speaking');
-        } else {
-          targetBorderElement.classList.remove('speaking');
-        }
-        requestAnimationFrame(checkVolume);
-      };
-
-      checkVolume();
-    } catch (e) {
-      console.warn('Audio meter setup error:', e);
+    if (this.isVideoOff) {
+      this.btnToggleCam.classList.remove('active');
+      this.btnToggleCam.classList.add('muted');
+      this.iconCamOn.classList.add('hidden');
+      this.iconCamOff.classList.remove('hidden');
+    } else {
+      this.btnToggleCam.classList.add('active');
+      this.btnToggleCam.classList.remove('muted');
+      this.iconCamOn.classList.remove('hidden');
+      this.iconCamOff.classList.add('hidden');
     }
   }
 }
