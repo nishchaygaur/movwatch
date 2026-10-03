@@ -180,6 +180,7 @@ class WebRTCManager {
     return this.peerConnection;
   }
 
+  initSocketSignaling() {
     // P2P Direct Stream from PeerJS
     this.socket.on('p2p-remote-stream', (remoteStream) => {
       console.log('[WebRTC] Received direct P2P stream');
