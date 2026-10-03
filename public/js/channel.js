@@ -1,5 +1,40 @@
 // CineSync Unified Real-time Communication Channel
-// Supports both Socket.IO (for dedicated/local servers) and PeerJS P2P (for zero-config Vercel/serverless deployments)
+// Supports Global TURN / STUN NAT Traversal across any Internet connection (4G/5G, Wi-Fi, Firewalls)
+
+const GLOBAL_ICE_SERVERS = [
+  // Fast Google STUN servers (UDP)
+  { urls: 'stun:stun.l.google.com:19302' },
+  { urls: 'stun:stun1.l.google.com:19302' },
+  { urls: 'stun:stun2.l.google.com:19302' },
+  { urls: 'stun:stun.cloudflare.com:3478' },
+  // OpenRelay Global Free TURN Relays (Port 80 & 443 UDP - bypasses Symmetric NAT)
+  {
+    urls: 'turn:openrelay.metered.ca:80',
+    username: 'openrelayproject',
+    credential: 'openrelayproject'
+  },
+  {
+    urls: 'turn:openrelay.metered.ca:443',
+    username: 'openrelayproject',
+    credential: 'openrelayproject'
+  },
+  // OpenRelay Global Free TURN Relay (Port 443 TCP - bypasses strict enterprise & mobile firewalls)
+  {
+    urls: 'turn:openrelay.metered.ca:443?transport=tcp',
+    username: 'openrelayproject',
+    credential: 'openrelayproject'
+  },
+  // Secure TLS TURNS Relay (Port 443 TCP - passes through all corporate/mobile deep packet inspection)
+  {
+    urls: 'turns:openrelay.metered.ca:443?transport=tcp',
+    username: 'openrelayproject',
+    credential: 'openrelayproject'
+  }
+];
+
+if (typeof window !== 'undefined') {
+  window.GLOBAL_ICE_SERVERS = GLOBAL_ICE_SERVERS;
+}
 
 class CineChannel {
   constructor() {
@@ -7,6 +42,8 @@ class CineChannel {
     this.mode = 'unknown'; // 'socketio' or 'peerjs'
     this.socket = null;
     this.peer = null;
+    this.myPeerId = null;
+    this.targetHostPeerId = null;
     this.dataConn = null;
     this.activeMediaCall = null;
     this.roomId = null;
@@ -14,6 +51,7 @@ class CineChannel {
     this.partnerUser = null;
     this.isHost = false;
     this.connected = false;
+    this.reconnectTimer = null;
   }
 
   on(event, callback) {
@@ -57,12 +95,15 @@ class CineChannel {
       isHost: false
     };
 
-    // If running on localhost or on a host with Socket.IO, check Socket.IO availability
+    // Check URL parameters for explicit host peer ID
+    const urlParams = new URLSearchParams(window.location.search);
+    this.targetHostPeerId = urlParams.get('host');
+
     const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
 
     if (isLocalhost && typeof io !== 'undefined') {
       try {
-        console.log('[Channel] Attempting Socket.IO connection...');
+        console.log('[Channel] Connecting via local Socket.IO server...');
         this.socket = io({ timeout: 3000, reconnectionAttempts: 2 });
 
         this.socket.on('connect', () => {
@@ -70,7 +111,6 @@ class CineChannel {
           this.mode = 'socketio';
           this.connected = true;
 
-          // Wire all socket events
           [
             'room-joined', 'user-joined', 'user-left', 'movie-action', 'movie-sync',
             'movie-heartbeat', 'chat-message', 'screen-reaction', 'webrtc-signal',
@@ -84,50 +124,67 @@ class CineChannel {
 
         this.socket.on('connect_error', () => {
           if (this.mode !== 'peerjs') {
-            console.warn('[Channel] Socket.IO unavailable, switching to PeerJS P2P transport');
-            this.initPeerJS();
+            console.log('[Channel] Socket.IO unavailable, switching to Internet P2P (TURN/STUN) transport');
+            this.initInternetP2P();
           }
         });
         return;
       } catch (e) {
-        console.warn('[Channel] Socket.IO initialization failed, using PeerJS:', e);
+        console.warn('[Channel] Socket.IO initialization failed, using Internet P2P:', e);
       }
     }
 
-    // Default to PeerJS P2P on Vercel / serverless / custom domain
-    this.initPeerJS();
+    // Default: Global Internet P2P with TURN across any network
+    this.initInternetP2P();
   }
 
-  // PeerJS P2P Transport (Direct browser-to-browser connection)
-  initPeerJS() {
+  // Internet P2P Transport with full NAT Traversal (TURN & STUN)
+  initInternetP2P() {
     this.mode = 'peerjs';
-    console.log('[Channel] Initializing PeerJS P2P Mode for room:', this.roomId);
+    console.log('[Channel] Initializing Internet P2P with global TURN relay for room:', this.roomId);
 
     if (typeof Peer === 'undefined') {
       console.error('[Channel] PeerJS library not loaded');
       return;
     }
 
-    const cleanRoom = this.roomId.toLowerCase().replace(/[^a-z0-9]/g, '');
-    const hostPeerId = `cinesync-${cleanRoom}-host`;
-    const guestPeerId = `cinesync-${cleanRoom}-${Math.random().toString(36).substring(2, 6)}`;
+    const cleanRoom = (this.roomId || 'room').toLowerCase().replace(/[^a-z0-9]/g, '');
 
-    // Try creating Host peer first
-    this.peer = new Peer(hostPeerId, {
+    // If URL has ?host=..., we are a guest joining the host directly
+    if (this.targetHostPeerId) {
+      const guestPeerId = `cs-${cleanRoom}-g-${Math.random().toString(36).substring(2, 6)}`;
+      this.connectAsGuest(guestPeerId, this.targetHostPeerId);
+      return;
+    }
+
+    // Otherwise, we are creating/hosting this room
+    // Use a unique host ID with random suffix to avoid stale ghost sessions on public broker
+    const uniqueHostPeerId = `cs-${cleanRoom}-h-${Math.random().toString(36).substring(2, 6)}`;
+    this.myPeerId = uniqueHostPeerId;
+
+    this.peer = new Peer(uniqueHostPeerId, {
       debug: 0,
       config: {
-        iceServers: [
-          { urls: 'stun:stun.l.google.com:19302' },
-          { urls: 'stun:stun1.l.google.com:19302' }
-        ]
+        iceServers: GLOBAL_ICE_SERVERS,
+        iceCandidatePoolSize: 10
       }
     });
 
     this.peer.on('open', (id) => {
-      console.log('[PeerJS] Registered as Room Host:', id);
+      console.log('[PeerJS] Registered as Room Host with TURN:', id);
       this.isHost = true;
       this.user.isHost = true;
       this.connected = true;
+      this.myPeerId = id;
+
+      try {
+        const u = new URL(window.location.href);
+        u.searchParams.set('room', this.roomId);
+        u.searchParams.set('host', id);
+        window.history.replaceState({ path: u.href }, '', u.href);
+      } catch (e) {}
+
+      this.updateStatusText('Waiting for partner to join link...');
 
       // Trigger room-joined as host
       this.trigger('room-joined', {
@@ -149,71 +206,61 @@ class CineChannel {
       });
     });
 
-    // Handle error (e.g. host ID already taken -> We are the guest!)
     this.peer.on('error', (err) => {
+      console.warn('[PeerJS] Peer notice:', err.type || err);
       if (err.type === 'unavailable-id') {
-        console.log('[PeerJS] Host already active, connecting as Guest...');
-        try { this.peer.destroy(); } catch(e) {}
-        this.connectAsGuest(guestPeerId, hostPeerId);
-      } else {
-        console.warn('[PeerJS] Notice:', err.type || err);
+        const fallbackGuestId = `cs-${cleanRoom}-g-${Math.random().toString(36).substring(2, 6)}`;
+        this.connectAsGuest(fallbackGuestId, `cs-${cleanRoom}-host`);
       }
     });
 
-    // Host receives connection from Guest
+    // Host receives incoming DataConnection from Guest
     this.peer.on('connection', (conn) => {
-      console.log('[PeerJS] Host received data connection from partner');
+      console.log('[PeerJS] Host received incoming connection from partner over Internet');
       this.setupDataConnection(conn);
     });
 
-    // Handle incoming video/audio call
+    // Host receives incoming Video/Audio Call
     this.peer.on('call', (call) => {
-      console.log('[PeerJS] Received incoming video call');
-      this.activeMediaCall = call;
-      if (window.webrtcManager && window.webrtcManager.localStream) {
-        call.answer(window.webrtcManager.localStream);
-      } else {
-        call.answer(); // Answer without stream initially
-      }
-      call.on('stream', (remoteStream) => {
-        this.trigger('p2p-remote-stream', remoteStream);
-      });
+      console.log('[PeerJS] Host received incoming media call');
+      this.handleIncomingMediaCall(call);
     });
   }
 
   connectAsGuest(guestId, hostId) {
     this.isHost = false;
     this.user.isHost = false;
+    this.myPeerId = guestId;
+    this.targetHostPeerId = hostId;
+
+    this.updateStatusText('Connecting to partner over Internet...');
 
     this.peer = new Peer(guestId, {
       debug: 0,
       config: {
-        iceServers: [
-          { urls: 'stun:stun.l.google.com:19302' },
-          { urls: 'stun:stun1.l.google.com:19302' }
-        ]
+        iceServers: GLOBAL_ICE_SERVERS,
+        iceCandidatePoolSize: 10
       }
     });
 
     this.peer.on('open', (id) => {
-      console.log('[PeerJS] Registered as Guest:', id);
-      console.log('[PeerJS] Connecting to Host:', hostId);
+      console.log('[PeerJS] Guest registered with TURN:', id);
+      console.log('[PeerJS] Initiating TURN/STUN connection to Host:', hostId);
 
-      const conn = this.peer.connect(hostId, { reliable: true });
+      const conn = this.peer.connect(hostId, {
+        reliable: true
+      });
       this.setupDataConnection(conn);
 
+      // Listen for incoming call from host
       this.peer.on('call', (call) => {
-        console.log('[PeerJS] Guest received incoming video call');
-        this.activeMediaCall = call;
-        if (window.webrtcManager && window.webrtcManager.localStream) {
-          call.answer(window.webrtcManager.localStream);
-        } else {
-          call.answer();
-        }
-        call.on('stream', (remoteStream) => {
-          this.trigger('p2p-remote-stream', remoteStream);
-        });
+        console.log('[PeerJS] Guest received incoming media call');
+        this.handleIncomingMediaCall(call);
       });
+    });
+
+    this.peer.on('error', (err) => {
+      console.warn('[PeerJS] Guest connection notice:', err.type || err);
     });
   }
 
@@ -221,10 +268,12 @@ class CineChannel {
     this.dataConn = conn;
 
     conn.on('open', () => {
-      console.log('[PeerJS] DataConnection OPEN between peers! 🎉');
+      console.log('[PeerJS] DataConnection OPEN between peers across Internet! 🎉');
       this.connected = true;
+      this.updateStatusText('🟢 Connected with partner');
+      window.toast && window.toast('🟢 Partner connected! Movie sync and video call active.');
 
-      // Exchange presence
+      // Exchange presence handshake
       conn.send({
         type: '__handshake__',
         user: this.user,
@@ -232,7 +281,6 @@ class CineChannel {
       });
 
       if (!this.isHost) {
-        // Guest triggers room joined
         this.trigger('room-joined', {
           user: this.user,
           users: [this.user],
@@ -241,7 +289,7 @@ class CineChannel {
         });
       }
 
-      // If local media is ready, call the partner
+      // If local media stream is ready, call partner with media stream
       if (window.webrtcManager && window.webrtcManager.localStream) {
         this.callPartnerWithStream(window.webrtcManager.localStream);
       }
@@ -259,20 +307,25 @@ class CineChannel {
           users: allUsers
         });
 
-        // If host, send current movie state to guest
+        // Host synchronizes current movie state to joining guest
         if (this.isHost && window.syncPlayer) {
           const currentMovie = window.syncPlayer.currentSource;
-          const isPlaying = !window.syncPlayer.video.paused;
+          const isPlaying = window.syncPlayer.isPlaying();
           conn.send({
             type: 'movie-sync',
             state: {
               source: currentMovie,
               isPlaying,
-              currentTime: window.syncPlayer.video.currentTime,
-              playbackRate: window.syncPlayer.video.playbackRate,
+              currentTime: window.syncPlayer.getCurrentTime(),
+              playbackRate: window.syncPlayer.video ? window.syncPlayer.video.playbackRate : 1,
               lastActionTimestamp: Date.now()
             }
           });
+        }
+
+        // If local media is active, send stream
+        if (window.webrtcManager && window.webrtcManager.localStream) {
+          this.callPartnerWithStream(window.webrtcManager.localStream);
         }
         return;
       }
@@ -293,6 +346,7 @@ class CineChannel {
 
     conn.on('close', () => {
       console.log('[PeerJS] Partner disconnected');
+      this.updateStatusText('Partner disconnected');
       if (this.partnerUser) {
         this.trigger('user-left', {
           userId: this.partnerUser.id,
@@ -302,17 +356,43 @@ class CineChannel {
       }
       this.dataConn = null;
     });
+
+    conn.on('error', (err) => {
+      console.warn('[PeerJS] Connection error:', err);
+    });
+  }
+
+  handleIncomingMediaCall(call) {
+    if (this.activeMediaCall && this.activeMediaCall !== call) {
+      try { this.activeMediaCall.close(); } catch (e) {}
+    }
+    this.activeMediaCall = call;
+    const myStream = (window.webrtcManager && window.webrtcManager.localStream) ? window.webrtcManager.localStream : undefined;
+    call.answer(myStream);
+    call.on('stream', (remoteStream) => {
+      console.log('[PeerJS] Received remote media stream via TURN/STUN');
+      this.trigger('p2p-remote-stream', remoteStream);
+    });
+    call.on('error', (err) => console.warn('[PeerJS] Call warning:', err));
   }
 
   callPartnerWithStream(stream) {
     if (!this.peer || !this.dataConn || !stream) return;
     try {
-      console.log('[PeerJS] Calling partner with media stream...');
-      const call = this.peer.call(this.dataConn.peer, stream);
+      const targetPeerId = this.dataConn.peer;
+      // If we already have an open call that is active, avoid glare
+      if (this.activeMediaCall && this.activeMediaCall.open) {
+        console.log('[PeerJS] Media call already active with stream');
+        return;
+      }
+      console.log('[PeerJS] Calling partner with media stream via TURN relay to:', targetPeerId);
+      const call = this.peer.call(targetPeerId, stream);
       this.activeMediaCall = call;
       call.on('stream', (remoteStream) => {
+        console.log('[PeerJS] Received answer remote media stream via TURN');
         this.trigger('p2p-remote-stream', remoteStream);
       });
+      call.on('error', (err) => console.warn('[PeerJS] Call warning:', err));
     } catch (e) {
       console.warn('[PeerJS] Call error:', e);
     }
@@ -320,7 +400,6 @@ class CineChannel {
 
   handlePeerEmit(event, data) {
     if (!this.dataConn || !this.dataConn.open) {
-      // If action is local and data connection not open yet, local echo
       if (event === 'chat-message') {
         const msg = {
           id: 'msg_' + Date.now(),
@@ -354,7 +433,6 @@ class CineChannel {
         time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
         isSystem: false
       };
-      // Send to partner and echo locally
       this.dataConn.send({ type: 'chat-message', message: msg });
       this.trigger('chat-message', msg);
     } else if (event === 'screen-reaction') {
@@ -375,6 +453,11 @@ class CineChannel {
         }
       });
     }
+  }
+
+  updateStatusText(text) {
+    const el = document.getElementById('syncStatusText');
+    if (el) el.textContent = text;
   }
 }
 

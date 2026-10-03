@@ -37,13 +37,35 @@ class WebRTCManager {
     this.iceCandidateQueue = [];
     this.partnerId = null;
 
-    // WebRTC Config
+    // WebRTC Config (with global OpenRelay TURN/STUN relays for cross-network NAT traversal)
     this.rtcConfig = {
-      iceServers: [
+      iceServers: (typeof window !== 'undefined' && window.GLOBAL_ICE_SERVERS) ? window.GLOBAL_ICE_SERVERS : [
         { urls: 'stun:stun.l.google.com:19302' },
         { urls: 'stun:stun1.l.google.com:19302' },
-        { urls: 'stun:stun2.l.google.com:19302' }
-      ]
+        { urls: 'stun:stun2.l.google.com:19302' },
+        { urls: 'stun:stun.cloudflare.com:3478' },
+        {
+          urls: 'turn:openrelay.metered.ca:80',
+          username: 'openrelayproject',
+          credential: 'openrelayproject'
+        },
+        {
+          urls: 'turn:openrelay.metered.ca:443',
+          username: 'openrelayproject',
+          credential: 'openrelayproject'
+        },
+        {
+          urls: 'turn:openrelay.metered.ca:443?transport=tcp',
+          username: 'openrelayproject',
+          credential: 'openrelayproject'
+        },
+        {
+          urls: 'turns:openrelay.metered.ca:443?transport=tcp',
+          username: 'openrelayproject',
+          credential: 'openrelayproject'
+        }
+      ],
+      iceCandidatePoolSize: 10
     };
 
     this.initControls();
