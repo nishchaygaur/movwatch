@@ -370,6 +370,82 @@ input, button, textarea {
   cursor: pointer;
 }
 
+.video-player-embed {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  border: none;
+  background: #000;
+  z-index: 4;
+}
+
+.player-error-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(14, 18, 28, 0.95);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 12;
+  backdrop-filter: blur(8px);
+}
+
+.error-dialog {
+  text-align: center;
+  max-width: 420px;
+  padding: 30px 24px;
+  background: var(--bg-surface-elevated);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+
+.error-emoji {
+  font-size: 2.8rem;
+}
+
+.error-dialog h4 {
+  font-size: 1.15rem;
+  color: #fff;
+}
+
+.error-dialog p {
+  font-size: 0.82rem;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+
+.error-actions {
+  margin-top: 8px;
+}
+
+.format-badges-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.fmt-badge {
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 3px 8px;
+  border-radius: var(--radius-full);
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--border-color);
+}
+
+.fmt-badge.yt { color: #f87171; border-color: rgba(248, 113, 113, 0.4); }
+.fmt-badge.hls { color: #fbbf24; border-color: rgba(251, 191, 36, 0.4); }
+.fmt-badge.mp4 { color: #60a5fa; border-color: rgba(96, 165, 250, 0.4); }
+.fmt-badge.gdrive { color: #34d399; border-color: rgba(52, 211, 153, 0.4); }
+.fmt-badge.vimeo { color: #38bdf8; border-color: rgba(56, 189, 248, 0.4); }
+
 /* Floating Reactions Canvas/Layer */
 .reactions-floating-layer {
   position: absolute;

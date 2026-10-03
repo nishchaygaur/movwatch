@@ -216,19 +216,44 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
-  // Custom URL Load
-  btnLoadCustomUrl.addEventListener('click', () => {
+  // Custom URL Load (Supports YouTube, HLS, Google Drive, Vimeo, MP4/WebM)
+  function handleCustomUrlLoad() {
     const url = customVideoUrlInput.value.trim();
     if (!url) return;
+
+    let title = 'Custom Video';
+    if (url.includes('youtube.com') || url.includes('youtu.be')) {
+      title = 'YouTube Stream';
+    } else if (url.includes('.m3u8')) {
+      title = 'HLS Live Stream';
+    } else if (url.includes('drive.google.com')) {
+      title = 'Google Drive Video';
+    } else if (url.includes('vimeo.com')) {
+      title = 'Vimeo Video';
+    } else {
+      const filename = url.split('/').pop().split('?')[0];
+      if (filename && filename.length > 2) {
+        title = decodeURIComponent(filename);
+      }
+    }
 
     syncPlayer.loadSource({
       type: 'url',
       url,
-      title: 'Custom Stream Video'
+      title
     }, true);
 
     modalMovieSelector.classList.add('hidden');
-    window.toast('🎬 Custom video stream loaded!');
+    customVideoUrlInput.value = '';
+    window.toast(`🎬 Loaded: ${title}`);
+  }
+
+  btnLoadCustomUrl.addEventListener('click', handleCustomUrlLoad);
+  customVideoUrlInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      handleCustomUrlLoad();
+    }
   });
 
   // Sample quick buttons

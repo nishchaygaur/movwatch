@@ -114,7 +114,7 @@ class CineChannel {
 
     // Try creating Host peer first
     this.peer = new Peer(hostPeerId, {
-      debug: 1,
+      debug: 0,
       config: {
         iceServers: [
           { urls: 'stun:stun.l.google.com:19302' },
@@ -136,9 +136,9 @@ class CineChannel {
         movieState: {
           source: {
             type: 'preset',
-            url: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4',
-            title: 'Big Buck Bunny (HD)',
-            poster: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/images/BigBuckBunny.jpg'
+            url: 'https://vjs.zencdn.net/v/oceans.mp4',
+            title: 'Oceans (HD Wildlife)',
+            poster: 'https://vjs.zencdn.net/v/oceans.png'
           },
           isPlaying: false,
           currentTime: 0,
@@ -152,11 +152,11 @@ class CineChannel {
     // Handle error (e.g. host ID already taken -> We are the guest!)
     this.peer.on('error', (err) => {
       if (err.type === 'unavailable-id') {
-        console.log('[PeerJS] Host already exists, connecting as Guest...');
-        this.peer.destroy();
+        console.log('[PeerJS] Host already active, connecting as Guest...');
+        try { this.peer.destroy(); } catch(e) {}
         this.connectAsGuest(guestPeerId, hostPeerId);
       } else {
-        console.warn('[PeerJS] Peer error:', err);
+        console.warn('[PeerJS] Notice:', err.type || err);
       }
     });
 
@@ -186,7 +186,7 @@ class CineChannel {
     this.user.isHost = false;
 
     this.peer = new Peer(guestId, {
-      debug: 1,
+      debug: 0,
       config: {
         iceServers: [
           { urls: 'stun:stun.l.google.com:19302' },

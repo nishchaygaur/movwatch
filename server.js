@@ -36,9 +36,9 @@ const rooms = new Map();
 
 const DEFAULT_PRESET = {
   type: 'preset',
-  url: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4',
-  title: 'Big Buck Bunny (HD)',
-  poster: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/images/BigBuckBunny.jpg'
+  url: 'https://vjs.zencdn.net/v/oceans.mp4',
+  title: 'Oceans (HD Wildlife)',
+  poster: 'https://vjs.zencdn.net/v/oceans.png'
 };
 
 function getOrCreateRoom(roomId) {

@@ -103,14 +103,21 @@ class WebRTCManager {
         this.isVideoOff = true;
         this.updateCamButtonUI();
       } catch (audioErr) {
-        console.warn('Audio-only failed too:', audioErr);
-        throw audioErr;
+        console.log('[WebRTC] Camera/Microphone not enabled or not found - running in chat & watch mode.');
+        this.isVideoOff = true;
+        this.isAudioMuted = true;
+        this.localPlaceholder.classList.remove('hidden');
+        this.updateCamButtonUI();
+        this.updateMicButtonUI();
+        return null;
       }
     }
 
-    this.localVideo.srcObject = this.localStream;
-    this.localPlaceholder.classList.add('hidden');
-    this.setupAudioMeter(this.localStream, this.localSpeakingBorder);
+    if (this.localStream) {
+      this.localVideo.srcObject = this.localStream;
+      this.localPlaceholder.classList.add('hidden');
+      this.setupAudioMeter(this.localStream, this.localSpeakingBorder);
+    }
 
     // If we have an existing peerConnection, add local tracks
     if (this.peerConnection) {

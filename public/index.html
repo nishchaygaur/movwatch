@@ -106,10 +106,28 @@
 
         <!-- Video Player Wrapper -->
         <div class="video-container" id="videoContainer">
-          <video id="mainVideo" preload="auto" playsinline>
-            <source src="https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4" type="video/mp4">
+          <video id="mainVideo" preload="metadata" playsinline>
+            <source src="https://vjs.zencdn.net/v/oceans.mp4" type="video/mp4">
             Your browser does not support HTML5 video.
           </video>
+
+          <!-- YouTube Player Container -->
+          <div id="youtubePlayer" class="video-player-embed hidden"></div>
+
+          <!-- Generic Embed Player (Vimeo, Google Drive) -->
+          <iframe id="genericEmbedPlayer" class="video-player-embed hidden" allow="autoplay; fullscreen; encrypted-media; picture-in-picture" allowfullscreen></iframe>
+
+          <!-- Friendly Error Fallback Overlay -->
+          <div id="playerErrorOverlay" class="player-error-overlay hidden">
+            <div class="error-dialog">
+              <span class="error-emoji">⚠️</span>
+              <h4>Video Could Not Be Played</h4>
+              <p id="playerErrorMessage">This stream cannot be played directly due to network or CORS restrictions.</p>
+              <div class="error-actions">
+                <button class="btn-primary" id="btnErrorOpenModal">Try Another Link or YouTube</button>
+              </div>
+            </div>
+          </div>
 
           <!-- Floating Reaction Hearts/Popcorns Layer -->
           <div class="reactions-floating-layer" id="floatingReactionsLayer"></div>
@@ -422,8 +440,8 @@
 
       <div class="movie-selector-tabs">
         <button class="m-tab active" data-target="m-featured">Featured Cinema</button>
+        <button class="m-tab" data-target="m-url">Any Video Link (YouTube, HLS, MP4)</button>
         <button class="m-tab" data-target="m-local">My Local Video File ⚡</button>
-        <button class="m-tab" data-target="m-url">Direct Video URL</button>
       </div>
 
       <div class="modal-body">
@@ -449,17 +467,26 @@
           </div>
         </div>
 
-        <!-- Tab: Direct URL -->
+        <!-- Tab: Direct URL / Universal Video Link -->
         <div class="m-content" id="m-url">
-          <p class="m-hint">Paste any direct public MP4, WebM, or video stream link:</p>
+          <p class="m-hint">Paste <strong>ANY video link</strong> — YouTube, HLS (.m3u8), Google Drive, Vimeo, or direct MP4/WebM:</p>
+          <div class="format-badges-row">
+            <span class="fmt-badge yt">🔴 YouTube</span>
+            <span class="fmt-badge hls">⚡ HLS (.m3u8)</span>
+            <span class="fmt-badge mp4">🎬 MP4 / WebM</span>
+            <span class="fmt-badge gdrive">📁 Google Drive</span>
+            <span class="fmt-badge vimeo">📺 Vimeo</span>
+          </div>
           <div class="input-row">
-            <input type="url" id="customVideoUrlInput" placeholder="https://example.com/movie.mp4">
+            <input type="url" id="customVideoUrlInput" placeholder="Paste YouTube link, .m3u8 stream, Google Drive, or MP4 URL...">
             <button class="btn-primary" id="btnLoadCustomUrl">Load Video</button>
           </div>
           <div class="url-samples">
-            <span>Quick Samples:</span>
-            <button class="pill-sample" data-url="https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/TearsOfSteel.mp4" data-title="Tears of Steel (Sci-Fi VFX)">Tears of Steel (Sci-Fi)</button>
-            <button class="pill-sample" data-url="https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/Sintel.mp4" data-title="Sintel (Fantasy/Action)">Sintel (Fantasy)</button>
+            <span>Quick Test Samples:</span>
+            <button class="pill-sample" data-url="https://www.youtube.com/watch?v=aqz-KE-bpKQ" data-title="Big Buck Bunny (YouTube 4K)">🔴 YouTube 4K</button>
+            <button class="pill-sample" data-url="https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8" data-title="Mux Multi-Bitrate (HLS HD)">⚡ HLS Stream (.m3u8)</button>
+            <button class="pill-sample" data-url="https://vjs.zencdn.net/v/oceans.mp4" data-title="Oceans Wildlife (Direct MP4)">🎬 Direct MP4</button>
+            <button class="pill-sample" data-url="https://cdn.plyr.io/static/demo/View_From_A_Blue_Moon_Trailer-720p.mp4" data-title="Blue Moon (Direct MP4)">🎬 Blue Moon</button>
           </div>
         </div>
       </div>
@@ -534,8 +561,9 @@
     </div>
   </div>
 
-  <!-- Audio Chimes (Web Audio API fallback) -->
-  <div class="toast-container" id="toastContainer"></div>
+  <!-- Media Streaming Engines: HLS.js and YouTube IFrame API -->
+  <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+  <script src="https://www.youtube.com/iframe_api"></script>
 
   <!-- Socket.io and PeerJS Client Libraries -->
   <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
