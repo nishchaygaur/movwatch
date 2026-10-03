@@ -96,13 +96,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const userName = inputUserName.value.trim() || `MovieFan_${Math.floor(1000 + Math.random() * 9000)}`;
     const roomId = inputRoomId.value.trim() || 'cinema-duo-1';
 
-    // Update URL without reload to reflect room and existing host
-    const urlParams = new URLSearchParams(window.location.search);
-    const existingHost = urlParams.get('host');
-    let newUrl = `${window.location.protocol}//${window.location.host}${window.location.pathname}?room=${encodeURIComponent(roomId)}`;
-    if (existingHost) {
-      newUrl += `&host=${encodeURIComponent(existingHost)}`;
-    }
+    // Update URL without reload to reflect room
+    const newUrl = `${window.location.protocol}//${window.location.host}${window.location.pathname}?room=${encodeURIComponent(roomId)}`;
     window.history.pushState({ path: newUrl }, '', newUrl);
 
     // Save user info
@@ -160,17 +155,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // Copy Invite Link functionality
   function getInviteLink() {
     const currentRoom = inputRoomId.value || 'main';
-    let link = `${window.location.origin}${window.location.pathname}?room=${encodeURIComponent(currentRoom)}`;
-    if (window.channel && window.channel.myPeerId) {
-      link += `&host=${encodeURIComponent(window.channel.myPeerId)}`;
-    } else {
-      const urlParams = new URLSearchParams(window.location.search);
-      const hostFromUrl = urlParams.get('host');
-      if (hostFromUrl) {
-        link += `&host=${encodeURIComponent(hostFromUrl)}`;
-      }
-    }
-    return link;
+    return `${window.location.origin}${window.location.pathname}?room=${encodeURIComponent(currentRoom)}`;
   }
 
   function copyInvite() {
