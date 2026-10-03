@@ -1,0 +1,550 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CineSync — Watch Movies Together with Video Call & Chat</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🍿</text></svg>">
+</head>
+<body class="dark-theme">
+  <!-- Dynamic Ambient Glow Backdrop -->
+  <div class="ambient-glow" id="ambientGlow"></div>
+
+  <!-- App Container -->
+  <div class="app-layout" id="appLayout">
+    
+    <!-- Top Navigation Bar -->
+    <header class="navbar">
+      <div class="nav-left">
+        <div class="brand-logo">
+          <span class="logo-icon">🍿</span>
+          <span class="brand-name">Cine<span class="gradient-text">Sync</span></span>
+          <span class="badge-live">DUO CINEMA</span>
+        </div>
+
+        <div class="room-pill" id="roomPill">
+          <span class="room-dot"></span>
+          <span class="room-label">Room:</span>
+          <strong id="displayRoomId">------</strong>
+          <button class="btn-icon-tiny" id="btnCopyLink" title="Copy Invite Link">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+              <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+            </svg>
+          </button>
+        </div>
+      </div>
+
+      <div class="nav-center">
+        <div class="sync-status-indicator" id="syncStatusIndicator">
+          <span class="pulse-indicator"></span>
+          <span id="syncStatusText">Ready to Sync</span>
+        </div>
+      </div>
+
+      <div class="nav-right">
+        <button class="nav-btn" id="btnChangeMovie">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"></rect>
+            <line x1="7" y1="2" x2="7" y2="22"></line>
+            <line x1="17" y1="2" x2="17" y2="22"></line>
+            <line x1="2" y1="12" x2="22" y2="12"></line>
+          </svg>
+          <span>Change Movie</span>
+        </button>
+
+        <button class="nav-btn" id="btnInviteFriend">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+            <circle cx="8.5" cy="7.5" r="4"></circle>
+            <line x1="20" y1="8" x2="20" y2="14"></line>
+            <line x1="23" y1="11" x2="17" y2="11"></line>
+          </svg>
+          <span>Invite Partner</span>
+        </button>
+
+        <button class="nav-btn btn-primary" id="btnToggleChat" title="Toggle Chat Panel">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+          </svg>
+          <span id="chatBadge" class="chat-badge hidden">0</span>
+        </button>
+
+        <div class="user-profile-badge" id="myProfileBadge">
+          <img id="myAvatarImg" src="https://api.dicebear.com/7.x/bottts/svg?seed=guest" alt="Avatar">
+          <span id="myUsernameDisplay">You</span>
+        </div>
+      </div>
+    </header>
+
+    <!-- Main Content Area: Cinema Stage + Side Panels -->
+    <main class="theater-stage">
+      
+      <!-- Center Theater / Movie Screen -->
+      <section class="movie-section" id="movieSection">
+        
+        <!-- Local File Sync Notice Banner (shown if partner selected local file) -->
+        <div class="local-file-banner hidden" id="localFileBanner">
+          <div class="banner-content">
+            <span class="banner-icon">📁</span>
+            <div class="banner-text">
+              <strong id="bannerPartnerName">Partner</strong> selected a local video: 
+              <code id="bannerFileName">video.mp4</code>.
+              <span>Select the same file on your device to watch together in 4K/HD with zero buffering!</span>
+            </div>
+            <label class="btn-banner-action" for="partnerFilePicker">
+              Browse File
+              <input type="file" id="partnerFilePicker" accept="video/*" hidden>
+            </label>
+          </div>
+          <button class="banner-close" id="btnCloseBanner">&times;</button>
+        </div>
+
+        <!-- Video Player Wrapper -->
+        <div class="video-container" id="videoContainer">
+          <video id="mainVideo" preload="auto" playsinline>
+            <source src="https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4" type="video/mp4">
+            Your browser does not support HTML5 video.
+          </video>
+
+          <!-- Floating Reaction Hearts/Popcorns Layer -->
+          <div class="reactions-floating-layer" id="floatingReactionsLayer"></div>
+
+          <!-- Giant Center Play/Pause Indicator on Click -->
+          <div class="center-play-overlay" id="centerPlayOverlay">
+            <div class="play-pulse-circle">
+              <svg id="centerPlayIcon" width="48" height="48" viewBox="0 0 24 24" fill="currentColor">
+                <polygon points="5 3 19 12 5 21 5 3"></polygon>
+              </svg>
+            </div>
+          </div>
+
+          <!-- Video Title Overlay on Hover -->
+          <div class="video-top-overlay">
+            <div class="current-movie-info">
+              <span class="now-playing-tag">NOW PLAYING</span>
+              <h2 id="videoTitleDisplay">Big Buck Bunny (HD)</h2>
+            </div>
+            <div class="sync-drift-pill" id="syncDriftPill" title="Time difference between you and your partner">
+              <span class="drift-dot"></span>
+              <span id="syncDriftText">Synced: 0.0s</span>
+            </div>
+          </div>
+
+          <!-- Sleek Custom Video Controls -->
+          <div class="custom-video-controls" id="videoControls">
+            
+            <!-- Scrub / Progress Bar -->
+            <div class="timeline-container" id="timelineContainer">
+              <div class="timeline-buffered" id="bufferedBar"></div>
+              <div class="timeline-progress" id="progressBar"></div>
+              <div class="timeline-thumb" id="progressThumb"></div>
+              <div class="timeline-tooltip" id="timeTooltip">00:00</div>
+            </div>
+
+            <div class="controls-bottom-bar">
+              <div class="controls-left">
+                <!-- Play / Pause -->
+                <button class="ctrl-btn" id="btnPlayPause" title="Play/Pause (Space)">
+                  <svg id="iconPlay" width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                    <polygon points="5 3 19 12 5 21 5 3"></polygon>
+                  </svg>
+                  <svg id="iconPause" class="hidden" width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                    <rect x="6" y="4" width="4" height="16"></rect>
+                    <rect x="14" y="4" width="4" height="16"></rect>
+                  </svg>
+                </button>
+
+                <!-- 10s Rewind -->
+                <button class="ctrl-btn" id="btnRewind10" title="Rewind 10s (←)">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M1 4v6h6"></path>
+                    <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"></path>
+                    <text x="12" y="16" font-size="7" font-weight="bold" fill="currentColor" stroke="none" text-anchor="middle">10</text>
+                  </svg>
+                </button>
+
+                <!-- 10s Forward -->
+                <button class="ctrl-btn" id="btnForward10" title="Forward 10s (→)">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M23 4v6h-6"></path>
+                    <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
+                    <text x="12" y="16" font-size="7" font-weight="bold" fill="currentColor" stroke="none" text-anchor="middle">10</text>
+                  </svg>
+                </button>
+
+                <!-- Volume / Mute -->
+                <div class="volume-group">
+                  <button class="ctrl-btn" id="btnMuteVolume" title="Mute/Unmute (M)">
+                    <svg id="iconVolumeHigh" width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                      <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
+                      <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path>
+                    </svg>
+                    <svg id="iconVolumeMuted" class="hidden" width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                      <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
+                      <line x1="23" y1="9" x2="17" y2="15" stroke="currentColor" stroke-width="2"></line>
+                      <line x1="17" y1="9" x2="23" y2="15" stroke="currentColor" stroke-width="2"></line>
+                    </svg>
+                  </button>
+                  <input type="range" class="volume-slider" id="volumeSlider" min="0" max="1" step="0.05" value="1">
+                </div>
+
+                <!-- Time Display -->
+                <div class="time-display">
+                  <span id="currentTime">00:00</span>
+                  <span class="time-separator">/</span>
+                  <span id="totalDuration">00:00</span>
+                </div>
+              </div>
+
+              <div class="controls-right">
+                <!-- Sync Now Button -->
+                <button class="ctrl-btn btn-pill-sync" id="btnForceSync" title="Force sync with partner">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polyline points="23 4 23 10 17 10"></polyline>
+                    <polyline points="1 20 1 14 7 14"></polyline>
+                    <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+                  </svg>
+                  <span>Sync Now</span>
+                </button>
+
+                <!-- Playback Speed Dropdown -->
+                <div class="speed-selector">
+                  <button class="ctrl-btn text-btn" id="btnSpeedSelector">1x</button>
+                  <div class="speed-menu hidden" id="speedMenu">
+                    <button data-speed="0.5">0.5x</button>
+                    <button data-speed="0.75">0.75x</button>
+                    <button data-speed="1.0" class="active">1.0x (Normal)</button>
+                    <button data-speed="1.25">1.25x</button>
+                    <button data-speed="1.5">1.5x</button>
+                    <button data-speed="2.0">2.0x</button>
+                  </div>
+                </div>
+
+                <!-- Fullscreen Toggle -->
+                <button class="ctrl-btn" id="btnFullscreen" title="Toggle Fullscreen (F)">
+                  <svg id="iconEnterFullscreen" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"></path>
+                  </svg>
+                  <svg id="iconExitFullscreen" class="hidden" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M8 3v3a2 2 0 0 1-2 2H3m18 0h-3a2 2 0 0 1-2-2V3m0 18v-3a2 2 0 0 1 2-2h3M3 16h3a2 2 0 0 1 2 2v3"></path>
+                  </svg>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Cinema Bottom Bar: Emoji Reactions Bar & Room Info -->
+        <div class="cinema-reaction-bar">
+          <div class="reaction-label">
+            <span>Instant Reactions:</span>
+          </div>
+          <div class="emoji-pills">
+            <button class="emoji-btn" data-emoji="🍿" title="Popcorn">🍿 Popcorn</button>
+            <button class="emoji-btn" data-emoji="❤️" title="Love">❤️ Love</button>
+            <button class="emoji-btn" data-emoji="🔥" title="Fire">🔥 Hype</button>
+            <button class="emoji-btn" data-emoji="😂" title="Laugh">😂 Haha</button>
+            <button class="emoji-btn" data-emoji="😱" title="Shock">😱 Shock</button>
+            <button class="emoji-btn" data-emoji="👏" title="Applause">👏 Bravo</button>
+          </div>
+          <div class="theater-sound-toggle">
+            <label class="switch-label">
+              <input type="checkbox" id="chkSoundEffects" checked>
+              <span class="switch-text">Sound FX 🔔</span>
+            </label>
+          </div>
+        </div>
+
+      </section>
+
+      <!-- Video Call Dock / Floating PiP Webcams -->
+      <aside class="video-call-dock" id="videoCallDock">
+        <div class="call-dock-header">
+          <div class="call-title">
+            <span class="pulse-call-dot"></span>
+            <strong>Duo Video Call</strong>
+          </div>
+          <div class="call-dock-actions">
+            <button class="btn-dock-icon" id="btnToggleCallDock" title="Minimize / Expand Video Call">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polyline points="4 14 10 14 10 20"></polyline>
+                <polyline points="20 10 14 10 14 4"></polyline>
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        <div class="call-streams-container" id="callStreamsContainer">
+          
+          <!-- Remote Partner Video Tile -->
+          <div class="video-tile remote-tile" id="remoteVideoTile">
+            <video id="remoteVideo" autoplay playsinline></video>
+            <div class="video-tile-placeholder" id="remotePlaceholder">
+              <div class="avatar-large" id="remoteAvatar">👤</div>
+              <span id="remoteUserName">Waiting for partner...</span>
+              <p class="waiting-subtext">Share room link to start video call</p>
+            </div>
+            <div class="video-tile-badge">
+              <span id="remoteBadgeName">Partner</span>
+              <div class="partner-voice-control" title="Adjust Partner Voice Volume">
+                <span>🔊</span>
+                <input type="range" id="remoteVolumeSlider" min="0" max="1" step="0.05" value="1">
+              </div>
+            </div>
+            <div class="speaking-glow-border" id="remoteSpeakingBorder"></div>
+          </div>
+
+          <!-- Local User Video Tile -->
+          <div class="video-tile local-tile" id="localVideoTile">
+            <video id="localVideo" autoplay playsinline muted></video>
+            <div class="video-tile-placeholder hidden" id="localPlaceholder">
+              <div class="avatar-large" id="localAvatar">🍿</div>
+              <span>Camera Off</span>
+            </div>
+            <div class="video-tile-badge">
+              <span>You</span>
+            </div>
+            <div class="speaking-glow-border" id="localSpeakingBorder"></div>
+          </div>
+
+        </div>
+
+        <!-- Video Call Floating Controls -->
+        <div class="call-controls-bar">
+          <button class="call-btn active" id="btnToggleMic" title="Toggle Microphone">
+            <svg id="iconMicOn" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
+              <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+              <line x1="12" y1="19" x2="12" y2="23"></line>
+              <line x1="8" y1="23" x2="16" y2="23"></line>
+            </svg>
+            <svg id="iconMicOff" class="hidden" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="1" y1="1" x2="23" y2="23"></line>
+              <path d="M9 9v3a3 3 0 0 0 5.12 2.12M15 9.34V4a3 3 0 0 0-5.94-.6"></path>
+              <path d="M17 16.95A7 7 0 0 1 5 12v-2m14 0v2a7 7 0 0 1-.11 1.23"></path>
+              <line x1="12" y1="19" x2="12" y2="23"></line>
+              <line x1="8" y1="23" x2="16" y2="23"></line>
+            </svg>
+          </button>
+
+          <button class="call-btn active" id="btnToggleCam" title="Toggle Camera">
+            <svg id="iconCamOn" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polygon points="23 7 16 12 23 17 23 7"></polygon>
+              <rect x="1" y="5" width="15" height="14" rx="2" ry="2"></rect>
+            </svg>
+            <svg id="iconCamOff" class="hidden" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="1" y1="1" x2="23" y2="23"></line>
+              <path d="M21 15.5V7l-5 4.5"></path>
+              <path d="M10 5h5a2 2 0 0 1 2 2v5.5"></path>
+              <path d="M2 7a2 2 0 0 1 2-2h1.5"></path>
+              <path d="M2 17a2 2 0 0 0 2 2h11"></path>
+            </svg>
+          </button>
+
+          <button class="call-btn" id="btnShareScreen" title="Share Screen / Window">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
+              <line x1="8" y1="21" x2="16" y2="21"></line>
+              <line x1="12" y1="17" x2="12" y2="21"></line>
+            </svg>
+          </button>
+
+          <button class="call-btn btn-call-start" id="btnStartCall" title="Connect Camera / Call">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"></path>
+            </svg>
+          </button>
+        </div>
+      </aside>
+
+      <!-- Live Chat & People Drawer / Side Panel -->
+      <aside class="chat-drawer" id="chatDrawer">
+        <div class="drawer-header">
+          <div class="drawer-tabs">
+            <button class="tab-btn active" data-tab="tab-chat" id="tabChatBtn">Chat</button>
+            <button class="tab-btn" data-tab="tab-people" id="tabPeopleBtn">
+              People <span class="tab-count" id="peopleCountBadge">1</span>
+            </button>
+          </div>
+          <button class="btn-drawer-close" id="btnCloseChatDrawer">&times;</button>
+        </div>
+
+        <!-- Tab 1: Chat Messages -->
+        <div class="tab-content active" id="tab-chat">
+          <div class="chat-messages-scroll" id="chatMessages">
+            <div class="chat-welcome-notice">
+              <span class="cinema-popcorn-icon">🍿</span>
+              <h4>Welcome to Duo Cinema!</h4>
+              <p>Play, pause, seek, and movies will stay 100% in sync with your partner. Chat and react in real-time!</p>
+            </div>
+          </div>
+
+          <!-- Chat Input -->
+          <form class="chat-input-form" id="chatForm">
+            <input type="text" id="chatInput" placeholder="Say something or drop an emoji..." autocomplete="off" maxlength="300">
+            <button type="submit" class="btn-chat-send" id="btnChatSend">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <line x1="22" y1="2" x2="11" y2="13"></line>
+                <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+              </svg>
+            </button>
+          </form>
+        </div>
+
+        <!-- Tab 2: Connected People -->
+        <div class="tab-content" id="tab-people">
+          <div class="people-list" id="peopleList">
+            <!-- Dynamically populated -->
+          </div>
+          <div class="people-invite-box">
+            <p>Watch together with someone special</p>
+            <button class="btn-full-width" id="btnCopyInviteInDrawer">📋 Copy Room Link</button>
+          </div>
+        </div>
+
+      </aside>
+
+    </main>
+  </div>
+
+  <!-- MODAL: Movie Selector -->
+  <div class="modal-backdrop hidden" id="modalMovieSelector">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3>🎬 Select Movie to Watch</h3>
+        <button class="modal-close-btn" id="btnCloseMovieSelector">&times;</button>
+      </div>
+
+      <div class="movie-selector-tabs">
+        <button class="m-tab active" data-target="m-featured">Featured Cinema</button>
+        <button class="m-tab" data-target="m-local">My Local Video File ⚡</button>
+        <button class="m-tab" data-target="m-url">Direct Video URL</button>
+      </div>
+
+      <div class="modal-body">
+        <!-- Tab: Featured Open Movies -->
+        <div class="m-content active" id="m-featured">
+          <p class="m-hint">Choose any cinematic short to stream right now in high quality:</p>
+          <div class="movie-grid" id="movieGrid">
+            <!-- Preset items rendered by JS -->
+          </div>
+        </div>
+
+        <!-- Tab: Local Video File (Instant Zero Upload) -->
+        <div class="m-content" id="m-local">
+          <div class="local-dropzone">
+            <div class="dropzone-icon">📁</div>
+            <h4>Play Any Local Movie File</h4>
+            <p>Select any <strong>.mp4, .webm, or .mkv</strong> file from your computer. Your partner selects the same movie file on their machine, and you both watch in 4K/1080p without waiting for slow cloud uploads!</p>
+            <label class="btn-primary btn-pick-file" for="localFileInput">
+              Choose Local Video
+              <input type="file" id="localFileInput" accept="video/*" hidden>
+            </label>
+            <div class="local-selected-status hidden" id="localFileStatus"></div>
+          </div>
+        </div>
+
+        <!-- Tab: Direct URL -->
+        <div class="m-content" id="m-url">
+          <p class="m-hint">Paste any direct public MP4, WebM, or video stream link:</p>
+          <div class="input-row">
+            <input type="url" id="customVideoUrlInput" placeholder="https://example.com/movie.mp4">
+            <button class="btn-primary" id="btnLoadCustomUrl">Load Video</button>
+          </div>
+          <div class="url-samples">
+            <span>Quick Samples:</span>
+            <button class="pill-sample" data-url="https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/TearsOfSteel.mp4" data-title="Tears of Steel (Sci-Fi VFX)">Tears of Steel (Sci-Fi)</button>
+            <button class="pill-sample" data-url="https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/Sintel.mp4" data-title="Sintel (Fantasy/Action)">Sintel (Fantasy)</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: Welcome / Name & Room Setup -->
+  <div class="modal-backdrop" id="modalWelcome">
+    <div class="modal-card welcome-card">
+      <div class="welcome-header">
+        <span class="welcome-emoji">🍿</span>
+        <h2>Welcome to CineSync</h2>
+        <p>Watch movies in perfect sync with your favorite person, with real-time video call & chat!</p>
+      </div>
+
+      <div class="welcome-body">
+        <div class="avatar-picker-section">
+          <label>Pick your Avatar:</label>
+          <div class="avatar-options" id="avatarOptions">
+            <img class="avatar-opt selected" src="https://api.dicebear.com/7.x/bottts/svg?seed=Felix" data-seed="Felix">
+            <img class="avatar-opt" src="https://api.dicebear.com/7.x/bottts/svg?seed=Mia" data-seed="Mia">
+            <img class="avatar-opt" src="https://api.dicebear.com/7.x/bottts/svg?seed=Luna" data-seed="Luna">
+            <img class="avatar-opt" src="https://api.dicebear.com/7.x/bottts/svg?seed=Leo" data-seed="Leo">
+            <img class="avatar-opt" src="https://api.dicebear.com/7.x/bottts/svg?seed=Zoe" data-seed="Zoe">
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label for="inputUserName">Your Nickname:</label>
+          <input type="text" id="inputUserName" placeholder="e.g. Alex, Sam, MovieBuff" maxlength="20" autofocus>
+        </div>
+
+        <div class="form-group" id="roomGroup">
+          <label for="inputRoomId">Room Code / Name:</label>
+          <div class="room-input-container">
+            <input type="text" id="inputRoomId" placeholder="e.g. romantic-cinema-99">
+            <button type="button" class="btn-secondary" id="btnRandomRoom" title="Generate New Room">🎲 New</button>
+          </div>
+        </div>
+
+        <button class="btn-primary btn-giant" id="btnEnterTheater">
+          Enter Theater 🎬
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: Share / Invite Partner -->
+  <div class="modal-backdrop hidden" id="modalInvite">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3>✨ Invite Your Movie Partner</h3>
+        <button class="modal-close-btn" id="btnCloseInviteModal">&times;</button>
+      </div>
+      <div class="modal-body invite-body">
+        <p>Share this link with your friend. When they open it, you will automatically connect in video, audio, and synchronized movie playback!</p>
+        <div class="invite-link-box">
+          <input type="text" id="shareableLinkInput" readonly>
+          <button class="btn-primary" id="btnCopyInviteLink">Copy Link</button>
+        </div>
+        <div class="share-tips">
+          <div class="tip-item">
+            <span>💡</span>
+            <p>Works in any modern browser (Chrome, Edge, Firefox, Safari). Allow camera & mic permissions when prompted for video calls.</p>
+          </div>
+          <div class="tip-item">
+            <span>⚡</span>
+            <p>Both of you can control the movie: play, pause, or jump around, and it will sync instantly on both screens!</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Audio Chimes (Web Audio API fallback) -->
+  <div class="toast-container" id="toastContainer"></div>
+
+  <!-- Socket.io client script -->
+  <script src="/socket.io/socket.io.js"></script>
+  
+  <!-- CineSync Modular Application Scripts -->
+  <script src="js/sound.js"></script>
+  <script src="js/chat.js"></script>
+  <script src="js/webrtc.js"></script>
+  <script src="js/sync-player.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
